@@ -1,71 +1,19 @@
 # ai4verilog
 
-`ai4verilog` 是一个包含两类实验内容的小型项目：
-
-1. 一个基于有限状态机实现的 32-bit 单精度浮点加法器 Verilog 示例。
-2. 一个针对红外灰度矩阵数据的边缘增强 Python 脚本。
-
-当前仓库更适合作为课程实验、功能演示和流程验证样例，而不是完整的产品级实现。尤其是 Verilog 部分，设计目标明确限定在“正数输入”的浮点加法场景。
+`ai4verilog` 当前 README 仅介绍仓库中的 Verilog 相关内容，核心是一个基于状态机实现的 32-bit 单精度浮点加法器示例，以及配套的 testbench 和仿真说明。
 
 ## 项目概览
 
-项目中已经落地了以下内容：
+当前 Verilog 相关文件如下：
 
-- `float_adder.v`：32-bit 浮点加法器 RTL。
-- `tb_float_adder.v`：面向功能验证的 testbench。
-- `infrared_edge_enhance.py`：读取 txt 灰度矩阵并执行预处理、边缘检测和增强。
-- `sample_ir.txt`：红外图像样例输入。
-- `outputs/`：已生成的图像处理结果和一张 Verilog 波形截图。
-- `prompt/ex1.txt`：该浮点加法器需求的原始文字提示词。
+- `float_adder.v`：32-bit 单精度浮点加法器 RTL。
+- `tb_float_adder.v`：功能验证 testbench。
+- `prompt/ex1.txt`：该模块的原始需求描述。
+- `outputs/float_adder_waveform_case1.png`：一次仿真的波形截图。
 
-## 仓库结构
+## 设计目标
 
-```text
-ai4verilog/
-├── .gitignore
-├── README.md
-├── float_adder.v
-├── tb_float_adder.v
-├── infrared_edge_enhance.py
-├── sample_ir.txt
-├── prompt/
-│   └── ex1.txt
-└── outputs/
-    ├── edge_response.png
-    ├── enhanced.png
-    ├── float_adder_waveform_case1.png
-    ├── original.png
-    ├── pipeline_overview.png
-    └── preprocessed.png
-```
-
-## 依赖环境
-
-### Verilog 仿真
-
-- `iverilog`
-- `vvp`
-
-推荐使用 Icarus Verilog 进行编译与仿真。
-
-### Python 图像处理
-
-- Python 3.10+
-- `numpy`
-- `matplotlib`
-- `opencv-python`
-
-可使用如下命令安装：
-
-```bash
-python3 -m pip install numpy matplotlib opencv-python
-```
-
-## Verilog 部分
-
-### 设计目标
-
-[`float_adder.v`](./float_adder.v) 实现了一个 32-bit 单精度浮点加法器接口：
+[`float_adder.v`](./float_adder.v) 实现的接口如下：
 
 ```verilog
 module float_adder(
@@ -80,50 +28,73 @@ module float_adder(
 );
 ```
 
-从 [`prompt/ex1.txt`](./prompt/ex1.txt) 可以看出，这个模块的需求前提是：
+根据 [`prompt/ex1.txt`](./prompt/ex1.txt) 中的需求，这个模块的设计前提包括：
 
-- 输入 `aIn`、`bIn` 为单精度浮点格式。
-- 参与运算的数据假定为正数。
-- `en` 用于发起一次输入握手。
-- `busy=1` 时模块不接受新的输入。
+- 输入 `aIn`、`bIn` 为 32-bit 单精度浮点数。
+- 运算场景假定为正数相加。
+- `en` 用于发起一次输入请求。
+- `busy=1` 时模块处于工作状态，不接受新的输入。
 - `out_vld` 在结果有效时拉高一个周期。
 
-### 实现思路
+## 实现思路
 
-模块通过状态机依次完成以下步骤：
+模块使用时序状态机分阶段完成浮点加法运算，主要状态包括：
 
-- `IDLE`：等待输入请求。
-- `LATCH`：锁存输入操作数。
-- `UNPACK`：拆分指数和尾数。
-- `ALIGN`：比较指数并对较小尾数右移对齐。
+- `IDLE`：等待输入。
+- `LATCH`：锁存输入数据。
+- `UNPACK`：拆分指数与尾数。
+- `ALIGN`：对较小操作数进行尾数右移对齐。
 - `ADD`：完成尾数求和。
-- `NORMALIZE`：规格化结果。
+- `NORMALIZE`：对结果进行规格化。
 - `PACK`：重新打包为 32-bit 浮点格式。
 - `OUT`：输出结果并拉高 `out_vld`。
-- `DONE`：收尾并释放 `busy`。
+- `DONE`：结束本次计算并释放 `busy`。
 
-实现里还包含一个 `shift_right_limit_24` 辅助函数，用于在指数差大于等于 24 时直接将较小尾数清零，避免越界移位。
+实现中还定义了一个 `shift_right_limit_24` 函数，用于在指数差过大时限制移位范围，避免 24-bit 尾数移位溢出。
 
-### 功能验证
+## 功能验证
 
-[`tb_float_adder.v`](./tb_float_adder.v) 覆盖了以下场景：
+[`tb_float_adder.v`](./tb_float_adder.v) 主要验证以下行为：
 
-- 复位后空闲状态检查
-- 基本浮点加法
-- 不同指数下的尾数对齐
-- 与 0 相加
-- 较大数值加法
-- `busy` 期间输入忽略检查
-- `out_vld` 单周期脉冲检查
+- 复位释放后模块处于空闲状态。
+- 基本浮点加法结果正确。
+- 指数不同场景下的尾数对齐正确。
+- `0` 参与运算时结果正确。
+- `busy` 拉高期间新输入会被忽略。
+- `out_vld` 仅保持一个周期。
+- 结果输出后 `busy` 能正确释放。
 
-本地已执行的仿真命令：
+已覆盖的样例包括：
+
+- `1.0 + 2.0`
+- `1.5 + 2.25`
+- `0.5 + 0.25`
+- `4.0 + 0.125`
+- `1.0 + 0.0`
+- `255.0 + 1.0`
+- `busy` 期间二次输入忽略场景
+
+## 仿真环境
+
+推荐使用 Icarus Verilog：
+
+- `iverilog`
+- `vvp`
+
+## 运行方式
+
+编译并运行 testbench：
 
 ```bash
 iverilog -g2012 -o /tmp/ai4v_float_adder_sim tb_float_adder.v float_adder.v
 vvp /tmp/ai4v_float_adder_sim
 ```
 
-本次运行结果为：
+如果需要查看波形，可在仿真后使用生成的 `tb_float_adder.vcd` 配合 GTKWave 等工具打开。
+
+## 本地验证结果
+
+本地已执行上述仿真命令，结果如下：
 
 ```text
 [TB][PASS] reset release: outputs returned to idle state.
@@ -137,110 +108,24 @@ vvp /tmp/ai4v_float_adder_sim
 [TB] simulation done: pass=8, fail=0
 ```
 
-仓库中还提供了一张波形截图：
+仓库内还保留了一张示例波形图：
 
 - `outputs/float_adder_waveform_case1.png`
 
-### Verilog 局限说明
+## 当前限制
 
-该实现适合教学与演示，当前并不是完整 IEEE 754 加法器，主要限制包括：
+这个实现更适合教学、演示和基础实验，不是完整的 IEEE 754 工业级浮点加法器。当前限制主要包括：
 
-- 默认只考虑正数输入，不处理符号位加减。
-- 未系统覆盖 NaN、Infinity、非规格化数等完整边界行为。
-- 规格化逻辑较简化，更适合展示基本流程而非高精度工业实现。
-- 时序结构是串行状态推进，重点是可读性和可验证性，而不是吞吐率优化。
-
-## Python 红外图像增强部分
-
-[`infrared_edge_enhance.py`](./infrared_edge_enhance.py) 用于处理存储为 txt 矩阵的红外灰度图像数据，处理流程如下：
-
-1. 读取二维灰度矩阵。
-2. 归一化到 `[0, 1]`。
-3. 使用高斯滤波预处理。
-4. 可选使用双边滤波进一步抑制噪声。
-5. 融合 Sobel、Scharr、Laplacian 三种边缘响应。
-6. 通过细节增强和边缘注入生成增强结果。
-7. 可视化并可选保存中间图与总览图。
-
-### 输入与输出
-
-- 输入样例：[`sample_ir.txt`](./sample_ir.txt)
-- 输出目录：[`outputs/`](./outputs)
-
-已存在的输出文件包括：
-
-- `outputs/original.png`
-- `outputs/preprocessed.png`
-- `outputs/edge_response.png`
-- `outputs/enhanced.png`
-- `outputs/pipeline_overview.png`
-
-### 使用方式
-
-安装依赖后，可通过如下命令运行：
-
-```bash
-python3 infrared_edge_enhance.py sample_ir.txt --save-dir outputs --no-show
-```
-
-如果输入 txt 使用特定分隔符，可显式指定：
-
-```bash
-python3 infrared_edge_enhance.py sample_ir.txt --delimiter " " --save-dir outputs --no-show
-```
-
-如果希望关闭双边滤波：
-
-```bash
-python3 infrared_edge_enhance.py sample_ir.txt --disable-bilateral --save-dir outputs --no-show
-```
-
-### 当前环境验证情况
-
-本地尝试运行脚本时，当前环境缺少 Python 依赖，因此未直接完成一次重跑。缺失信息如下：
-
-```text
-ModuleNotFoundError: No module named 'cv2'
-```
-
-也就是说，脚本本身已经在仓库中就绪，但运行前需要先安装 `opencv-python`，通常也需要一并安装 `numpy` 与 `matplotlib`。
-
-## 快速开始
-
-### 只验证 Verilog 模块
-
-```bash
-iverilog -g2012 -o /tmp/ai4v_float_adder_sim tb_float_adder.v float_adder.v
-vvp /tmp/ai4v_float_adder_sim
-```
-
-### 只运行图像增强脚本
-
-```bash
-python3 -m pip install numpy matplotlib opencv-python
-python3 infrared_edge_enhance.py sample_ir.txt --save-dir outputs --no-show
-```
-
-## 这个项目适合做什么
-
-- AI 生成 Verilog 示例的整理与展示
-- 基础数字设计实验的代码样例
-- 浮点加法器状态机流程讲解
-- 机器视觉预处理与边缘增强实验
-- 将自然语言需求转成代码原型的教学展示
+- 仅面向正数输入场景。
+- 未完整处理符号位加减。
+- 未系统覆盖 NaN、Infinity、非规格化数等特殊情况。
+- 规格化与边界处理仍是简化实现。
+- 设计重点是流程清晰和 testbench 可验证性，而不是高吞吐或高性能流水化。
 
 ## 后续可扩展方向
 
-- 为浮点加法器补全负数、规格化左移、舍入和特殊值处理
-- 增加更多 testbench 用例与自动化回归脚本
-- 为 Python 部分补 `requirements.txt`
-- 提供 Jupyter Notebook 或命令行批处理版本
-- 将 Verilog 和图像处理实验拆分为更清晰的子目录
-
-## 说明
-
-仓库当前分支中已经包含一组示例输出文件，便于直接查看结果。如果后续打算继续扩展这个项目，比较推荐优先补上：
-
-1. `requirements.txt`
-2. 更系统的 testbench 自动化
-3. 更完整的模块功能边界说明
+- 增加负数与减法相关处理逻辑。
+- 补充更多特殊值与边界条件测试。
+- 增加自动化回归脚本。
+- 完善舍入、规格化左移与异常值处理。
+- 将当前状态机实现扩展为更高性能的流水方案。
