@@ -80,7 +80,7 @@ module float_adder(
 
 - `iverilog`
 - `vvp`
-
+或者Vivado使用
 ## 运行方式
 
 编译并运行 testbench：
